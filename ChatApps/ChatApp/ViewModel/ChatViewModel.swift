@@ -4,9 +4,11 @@
 //
 //  Created by madaozaku on 2025/04/18.
 //
+// MARK: - ChatViewModel with @Observable
+import Foundation
 import SwiftUI
+import Observation
 
-// MARK: - ViewModel with @Observable
 @Observable class ChatViewModel {
     // State
     var messages: [Message] = []
@@ -16,13 +18,9 @@ import SwiftUI
     var currentUser: User
     var errorMessage: String?
 
-    private let webSocketService = WebSocketService()
-    private let serverURL: URL
+    private var webSocketService = WebSocketService()
 
     init(userId: String = UUID().uuidString, userName: String = "ユーザー\(Int.random(in: 1000...9999))") {
-        // Set server URL - replace with your actual WebSocket server URL
-        serverURL = URL(string: "wss://your-chat-server.com/chat")!
-
         // Initialize current user
         currentUser = User(id: userId, name: userName)
 
@@ -64,7 +62,22 @@ import SwiftUI
     }
 
     func connect() {
-        webSocketService.connect(url: serverURL, userId: currentUser.id, userName: currentUser.name)
+        // URLComponents を使ってより安全に URL を構築
+        var components = URLComponents()
+        components.scheme = "ws"
+        components.host = "localhost"
+        components.port = 8080
+        components.path = "/chat"
+        components.queryItems = [
+            URLQueryItem(name: "userId", value: currentUser.id),
+            URLQueryItem(name: "userName", value: currentUser.name)
+        ]
+
+        if let url = components.url {
+            webSocketService.connect(url: url, userId: currentUser.id, userName: currentUser.name)
+        } else {
+            errorMessage = "WebSocketサーバーのURLが無効です"
+        }
     }
 
     func disconnect() {

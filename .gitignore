@@ -61,3 +61,23 @@ fastlane/Preview.html
 fastlane/screenshots/**/*.png
 fastlane/test_output
 .DS_Store
+
+# Node.js / Chat Server
+chat-server/node_modules/
+chat-server/npm-debug.log
+chat-server/yarn-error.log
+chat-server/yarn-debug.log
+chat-server/.env
+chat-server/.env.local
+chat-server/.env.development.local
+chat-server/.env.test.local
+chat-server/.env.production.local
+chat-server/logs/
+chat-server/dist/
+chat-server/build/
+chat-server/coverage/
+chat-server/.npm/
+chat-server/.yarn/
+chat-server/.pnp.*
+chat-server/.DS_Store
+ChatApps/.DS_Store

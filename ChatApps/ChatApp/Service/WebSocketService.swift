@@ -7,6 +7,7 @@
 
 // MARK: - WebSocket Service
 
+// MARK: - WebSocket Service
 import Foundation
 
 class WebSocketService {
@@ -27,26 +28,33 @@ class WebSocketService {
     }
 
     func connect(url: URL, userId: String, userName: String) {
-        let session = URLSession(configuration: .default)
-        webSocketTask = session.webSocketTask(with: url)
+        // セッション設定を調整して接続の安定性を向上
+        let sessionConfig = URLSessionConfiguration.default
+        sessionConfig.timeoutIntervalForRequest = 30
+        sessionConfig.timeoutIntervalForResource = 60
 
-        // Add query parameters for user identification
-        var urlComponents = URLComponents(url: url, resolvingAgainstBaseURL: true)
-        urlComponents?.queryItems = [
-            URLQueryItem(name: "userId", value: userId),
-            URLQueryItem(name: "userName", value: userName)
-        ]
+        let session = URLSession(configuration: sessionConfig)
 
-        if let connectionURL = urlComponents?.url {
-            webSocketTask = session.webSocketTask(with: connectionURL)
-            webSocketTask?.resume()
-            receiveMessage()
-
-            // Start ping timer to keep connection alive
-            startPingTimer()
-
-            onConnected?()
+        // URLが有効な形式かを確認
+        guard url.scheme == "ws" || url.scheme == "wss" else {
+            print("エラー: 無効なURL形式 - WebSocketにはws://またはwss://プロトコルが必要です: \(url)")
+            onDisconnected?()
+            return
         }
+
+        print("WebSocket接続を試行: \(url)")
+
+        webSocketTask = session.webSocketTask(with: url)
+        webSocketTask?.resume()
+
+        // 接続成功したと仮定して（実際のハンドシェイクの成功は受信イベントで確認）
+        receiveMessage()
+
+        // ping/pongの開始
+        startPingTimer()
+
+        // 接続通知（注：実際には最初のメッセージ受信時に接続成功とみなすべき）
+        onConnected?()
     }
 
     func disconnect() {
@@ -62,15 +70,16 @@ class WebSocketService {
             let data = try encoder.encode(message)
 
             if let jsonString = String(data: data, encoding: .utf8) {
+                print("送信メッセージ: \(jsonString)")
                 let message = URLSessionWebSocketTask.Message.string(jsonString)
                 webSocketTask?.send(message) { error in
                     if let error = error {
-                        print("WebSocket sending error: \(error)")
+                        print("WebSocket送信エラー: \(error)")
                     }
                 }
             }
         } catch {
-            print("Failed to encode message: \(error)")
+            print("メッセージのエンコードに失敗: \(error)")
         }
     }
 
@@ -78,48 +87,65 @@ class WebSocketService {
         webSocketTask?.receive { [weak self] result in
             switch result {
             case .success(let message):
+                print("WebSocketメッセージ受信成功")
+
                 switch message {
                 case .string(let text):
+                    print("受信テキスト: \(text)")
                     self?.handleIncomingMessage(text)
                 case .data(let data):
+                    print("受信データ (\(data.count) bytes)")
                     self?.handleIncomingData(data)
                 @unknown default:
-                    break
+                    print("不明なメッセージタイプ")
                 }
 
-                // Continue receiving messages
+                // 引き続きメッセージを受信
                 self?.receiveMessage()
 
             case .failure(let error):
-                print("Error receiving message: \(error)")
+                print("メッセージ受信エラー: \(error)")
+
+                // 特定のエラーの詳細情報を出力
+                if let urlError = error as? URLError {
+                    print("URLエラーコード: \(urlError.code.rawValue)")
+                    print("エラー説明: \(urlError.localizedDescription)")
+
+                    if let failingURLString = urlError.userInfo[NSURLErrorFailingURLStringErrorKey] as? String {
+                        print("失敗したURL: \(failingURLString)")
+                    }
+                }
+
+                // 接続を終了し、再接続のトリガーを作成
                 self?.disconnect()
             }
         }
     }
 
     private func handleIncomingMessage(_ text: String) {
-        // Handle different message types
+        // 異なるメッセージタイプを処理
         if let data = text.data(using: .utf8) {
             do {
-                // Try to decode as a chat message
+                // チャットメッセージとしてデコード
                 let decoder = JSONDecoder()
                 decoder.dateDecodingStrategy = .iso8601
 
                 if text.contains("\"type\":\"userList\"") {
-                    // Handle user list update
+                    // ユーザーリスト更新を処理
                     let userListResponse = try decoder.decode(UserListResponse.self, from: data)
                     DispatchQueue.main.async {
                         self.onUserListUpdate?(userListResponse.users)
                     }
                 } else {
-                    // Handle chat message
+                    // チャットメッセージを処理
                     let message = try decoder.decode(Message.self, from: data)
                     DispatchQueue.main.async {
                         self.onReceiveMessage?(message)
                     }
                 }
             } catch {
-                print("Failed to decode message: \(error)")
+                print("メッセージのデコードに失敗: \(error)")
+                print("受信したJSON: \(text)")
             }
         }
     }
@@ -134,13 +160,14 @@ class WebSocketService {
                 self.onReceiveMessage?(message)
             }
         } catch {
-            print("Failed to decode data: \(error)")
+            print("データのデコードに失敗: \(error)")
+            print("受信データ: \(data.base64EncodedString())")
         }
     }
 
-    // Keep connection alive with ping
+    // ping/pongによる接続維持
     private func startPingTimer() {
-        pingTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+        pingTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
             self?.ping()
         }
     }
@@ -153,7 +180,7 @@ class WebSocketService {
     private func ping() {
         webSocketTask?.sendPing { error in
             if let error = error {
-                print("Ping failed: \(error)")
+                print("Ping失敗: \(error)")
             }
         }
     }

@@ -6,9 +6,19 @@ const { v4: uuidv4 } = require('uuid');
 
 // HTTPサーバーの作成
 const server = http.createServer((req, res) => {
-  res.writeHead(200, { 'Content-Type': 'text/plain' });
-  res.end('WebSocket Chat Server');
-});
+    // WebSocketのハンドシェイクリクエストを特定して適切にレスポンス
+    if (req.headers.upgrade && req.headers.upgrade.toLowerCase() === 'websocket') {
+      res.writeHead(101, {
+        'Upgrade': 'websocket',
+        'Connection': 'Upgrade'
+      });
+      return;
+    }
+    
+    // 通常のHTTPリクエスト
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    res.end('WebSocket Chat Server Running');
+  });
 
 // WebSocketサーバーの作成
 const wss = new WebSocket.Server({ server });
